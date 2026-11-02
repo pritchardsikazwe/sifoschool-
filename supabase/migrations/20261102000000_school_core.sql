@@ -185,6 +185,7 @@ create table if not exists public.exam_results (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   student_id uuid not null references public.students(id),
+  class_id uuid references public.school_classes(id),
   subject_id uuid not null references public.school_subjects(id),
   academic_term_id uuid not null references public.academic_terms(id),
   assessment_name text not null,
@@ -208,7 +209,7 @@ create policy "school owner adds first members" on public.organization_members f
 );
 
 do $$ declare t text; begin
-  foreach t in array array['academic_years','academic_terms','school_classes','school_subjects','students','student_enrolments','school_attendance','fee_structures','student_invoices','student_invoice_lines','fee_payments','staff_members','exam_results'] loop
+  foreach t in array array['academic_years','academic_terms','school_classes','school_subjects','students','student_enrolments','school_attendance','fee_structures','student_invoices','student_invoice_lines','staff_members','exam_results'] loop
     execute format('alter table public.%I enable row level security',t);
     execute format('create policy "school members manage %1$I" on public.%1$I for all using(public.is_school_member(organization_id)) with check(public.is_school_member(organization_id))',t);
   end loop;
@@ -219,3 +220,8 @@ create index if not exists attendance_date_idx on public.school_attendance(organ
 create index if not exists invoices_due_idx on public.student_invoices(organization_id,due_date,status);
 create index if not exists payments_date_idx on public.fee_payments(organization_id,payment_date desc);
 create index if not exists exam_results_term_idx on public.exam_results(organization_id,academic_term_id,class_id);
+
+-- Fee receipts are append-only; corrections use a separately audited reversal.
+alter table public.fee_payments enable row level security;
+create policy "school members read fee receipts" on public.fee_payments for select using(public.is_school_member(organization_id));
+create policy "school members record fee receipts" on public.fee_payments for insert with check(public.is_school_member(organization_id));
